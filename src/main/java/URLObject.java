@@ -1,3 +1,6 @@
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+
 import java.util.Date;
 import java.util.UUID;
 
@@ -64,5 +67,17 @@ public class URLObject {
     @Override
     public String toString(){
         return "urlObj: internalUrl "+internalUrl+", UUID "+externalUUID+", requests "+requests+", lifeTime "+lifeTime+", createdTime "+createdTime;
+    }
+
+    public ObjectNode createJSON (){
+        ObjectMapper mapper = new ObjectMapper();
+        ObjectNode node =  mapper.createObjectNode();
+        node.put("internalURL",this.internalUrl)
+                .put("externalUUID",this.externalUUID.toString())
+                .put("createdTime",this.createdTime)
+                .put("lifeTime",this.lifeTime)
+                .put("requests",this.requests);
+        System.out.println("URLObject JSON: "+node.toString());
+        return node;
     }
 }
