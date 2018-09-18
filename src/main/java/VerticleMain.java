@@ -72,7 +72,6 @@ public class VerticleMain {
                     .putHeader("content-type", "text/html")
                     .end("<h1>POST /createUrl</h1>");
         });
-        /* router.route(HttpMethod.POST, "/documents/:configuration*").handler(BodyHandler.create());*/
         router.post("/documents/:configuration").handler(BodyHandler.create()).handler(this::createURL);
         router.get("/documents/:configuration/:documentId").handler(this::checkURL).blockingHandler(this::getDocument).handler(this::finalCheck);
 
