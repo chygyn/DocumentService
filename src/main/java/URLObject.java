@@ -72,11 +72,11 @@ public class URLObject {
     public ObjectNode createJSON (){
         ObjectMapper mapper = new ObjectMapper();
         ObjectNode node =  mapper.createObjectNode();
-        node.put("internalURL",this.internalUrl);
-        node.put("externalUUID",this.externalUUID.toString());
-        node.put("createdTime",this.createdTime);
-        node.put("lifeTime",this.lifeTime);
-        node.put("requests",this.requests);
+        node.put("internalURL",this.internalUrl)
+                .put("externalUUID",this.externalUUID.toString())
+                .put("createdTime",this.createdTime)
+                .put("lifeTime",this.lifeTime)
+                .put("requests",this.requests);
         System.out.println("URLObject JSON: "+node.toString());
         return node;
     }
