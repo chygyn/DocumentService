@@ -36,8 +36,8 @@ public class VerticleMain {
     public void run() {
         urlMap = new HashMap<String, URLObject>();
         /*
-        * Authorisation part. Read config.properties for user and password values
-        * */
+         * Authorisation part. Read config.properties for user and password values
+         * */
         InputStream inputStream = null;
         try {
             Properties prop = new Properties();
