@@ -2,6 +2,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Future;
+import io.vertx.core.Handler;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.HttpHeaders;
@@ -26,6 +27,7 @@ public class VerticleMain {
 
     private HashMap<String, URLObject> urlMap;
     private Vertx vertx;
+    private long timerId;
 
     private VerticleMain() {
         this.vertx = Vertx.vertx();
@@ -34,11 +36,7 @@ public class VerticleMain {
 
     public void run() {
         urlMap = new HashMap<String, URLObject>();
-        /*
-         * Authorisation part. Read config.properties for user and password values
-         * */
-        //вынести в отдельный метод и записывать бейз64 в отдельную проперти+метод для получения проперти
-        encodeBase64access();
+        init();
         Router router = Router.router(vertx);
         router.route("/").handler(routingContext -> {
             HttpServerResponse response = routingContext.response();
@@ -51,56 +49,37 @@ public class VerticleMain {
 
         HttpServer server = vertx.createHttpServer();
         server.requestHandler(router::accept).listen(8080);
-
-        /*vertx
-                .createHttpServer()
-                .requestHandler(router::accept)
-                .listen(
-                        // Retrieve the port from the configuration,
-                        // default to 8080.
-                        config().getInteger("http.port", 8080),
-                        result -> {
-                            if (result.succeeded()) {
-                                future.complete();
-                            } else {
-                                future.fail(result.cause());
-                            }
-                        }
-                );*/
     }
 
-    private void createURL(RoutingContext ctx) {
-        URLObject newUrl = URLObject.parseJson(ctx.getBodyAsJson());
-        UUID id;
-        do {
-            id = UUID.randomUUID();
-        } while (urlMap.containsKey(id));
-        newUrl.setExternalUUID(id);
-        urlMap.put(id.toString(), newUrl);
-        System.out.println("updated urlMap ");
-        urlMap.forEach((uuid, urlObject) -> System.out.println("UUID: " + uuid.toString() + " Object: " + urlObject.toString()));
-        String urlObjectJSON = newUrl.createJSON().toString();
-        ctx.response().setStatusCode(200).putHeader("content-type", "application/json; charset=utf-8")
-                .end(urlObjectJSON);
+    /*
+    * Prepare service to work.
+    * */
+    private void init(){
+        encodeBase64access();
+        setTimerCleaner();
     }
-
-    private void checkURL(RoutingContext ctx) {
-        String id = ctx.request().getParam("documentId");
-        URLObject urlInMemory = urlMap.get(id);
-        if (urlInMemory != null) {
-            long time = new Date().getTime();
-            if (checkRequestsCount(urlInMemory) & urlInMemory.getCreatedTime() + urlInMemory.getLifeTime() >= time) {
-                ctx.next();
-            } else {
-                ctx.response().putHeader("content-type", "text/html").setStatusCode(404)
-                        .end("<h1>Invalid URL. Required new URL.</h1>");
+    /*
+    * Check life time of each object in map. If !checkUrlTime -> remove object from map.
+    * */
+    private void setTimerCleaner(){
+        Integer days = Integer.getInteger(getProperty("timerDelay"));
+        long delay = days*24*3600*1000;
+       // String timerUnit = getProperty("timerUnit");
+        timerId = vertx.setPeriodic(delay, new Handler<Long>() {
+            @Override
+            public void handle(Long aLong) {
+                for (Map.Entry<String, URLObject> e:urlMap.entrySet()){
+                    URLObject currentObj = e.getValue();
+                    if (!checkUrlTime(currentObj))
+                        urlMap.remove(currentObj);
+                }
             }
-        } else {
-            ctx.response().putHeader("content-type", "text/html").setStatusCode(404)
-                    .end("<h1>Invalid URL. Required new URL.</h1>");
-        }
+        });
     }
-
+    /*
+    * Get any property by @name from config.properties.
+    * @name - String
+    * */
     private String getProperty(String name) {
         String result=null;
         InputStream inputStream = null;
@@ -129,6 +108,11 @@ public class VerticleMain {
         return result;
     }
 
+    /*
+    * Set any property by @name and @value into config.properties.
+    * @name - String
+    * @value - String
+    * */
     private void setProperty(String name, String value) {
         InputStream inputStream = null;
         try {
@@ -154,8 +138,13 @@ public class VerticleMain {
             }
         }
     }
-
+    /*
+    * Convert login and password from config.properties to base64.
+    * */
     private void encodeBase64access() {
+        /*
+         * Authorisation part. Read config.properties for user and password values
+         * */
         String user = getProperty("user");
         String password = getProperty("password");
         String base64Auth = Base64.getEncoder().encodeToString(new StringBuilder(user).append(":").append(password).toString().getBytes());
@@ -163,6 +152,10 @@ public class VerticleMain {
         System.out.println("Autehtication encoded: " + base64Auth);
     }
 
+    /*
+    * Check available requests count for @urlObj
+    * @urlObj - URLObject
+    * */
     private Boolean checkRequestsCount(URLObject urlObj) {
         if (urlObj.getRequests() > 0)
             return true;
@@ -170,16 +163,68 @@ public class VerticleMain {
             return false;
     }
 
+    /*
+     * Check life time for @urlObj
+     * @urlObj - URLObject
+     * */
+    private Boolean checkUrlTime(URLObject urlObj) {
+        long time = new Date().getTime();
+        if (urlObj.getCreatedTime() + urlObj.getLifeTime() >= time)
+            return true;
+        else
+            return false;
+    }
+
+    /*
+     * Create new entry in urlMap for incoming json object.
+     * @ctx - RoutingContext
+     * */
+    private void createURL(RoutingContext ctx) {
+        URLObject newUrl = URLObject.parseJson(ctx.getBodyAsJson());
+        UUID id;
+        do {
+            id = UUID.randomUUID();
+        } while (urlMap.containsKey(id));
+        newUrl.setExternalUUID(id);
+        urlMap.put(id.toString(), newUrl);
+        System.out.println("updated urlMap ");
+        urlMap.forEach((uuid, urlObject) -> System.out.println("UUID: " + uuid.toString() + " Object: " + urlObject.toString()));
+        String urlObjectJSON = newUrl.createJSON().toString();
+        ctx.response().setStatusCode(200).putHeader("content-type", "application/json; charset=utf-8")
+                .end(urlObjectJSON);
+    }
+
+    /*
+    * Check URL before send document to user
+    * @ctx - RoutingContext
+    * */
+    private void checkURL(RoutingContext ctx) {
+        String id = ctx.request().getParam("documentId");
+        URLObject urlInMemory = urlMap.get(id);
+        if (urlInMemory != null) {
+            long time = new Date().getTime();
+            if (checkRequestsCount(urlInMemory) & checkUrlTime(urlInMemory)) {
+                ctx.next();
+            } else {
+                ctx.response().putHeader("content-type", "text/html").setStatusCode(404)
+                        .end("<h1>Invalid URL. Required new URL.</h1>");
+            }
+        } else {
+            ctx.response().putHeader("content-type", "text/html").setStatusCode(404)
+                    .end("<h1>Invalid URL. Required new URL.</h1>");
+        }
+    }
+
+    /*
+     * Send document to user from content server.
+     * @ctx - RoutingContext
+     * */
     private void getDocument(RoutingContext ctx) {
         //retrieve object by id
         String id = ctx.request().getParam("documentId");
-        //добавить параметр в контекст
         URLObject urlInMemory = urlMap.get(id);
         ctx.put("object", urlInMemory);
         String internalURL = urlInMemory.getInternalUrl();
-        /*todo
-         * add param with document id
-         * */
         WebClient client = WebClient.create(vertx);
         client
                 //.getAbs("https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf")
@@ -203,7 +248,10 @@ public class VerticleMain {
                     }
                 });
     }
-
+    /*
+    * Check object in @ctx for available requests. Remove object from urlMap if !checkRequestsCount
+    * @ctx - RoutingContext
+    * */
     private void finalCheck(RoutingContext ctx) {
         URLObject urlInMemory = ctx.get("object");
         Boolean success = ctx.get("success");
@@ -214,7 +262,6 @@ public class VerticleMain {
     }
 
     public static void main(String[] args) {
-
         VerticleMain vm = new VerticleMain();
         vm.run();
     }
