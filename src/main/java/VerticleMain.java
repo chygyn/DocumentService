@@ -26,7 +26,6 @@ public class VerticleMain {
 
     private HashMap<String, URLObject> urlMap;
     private Vertx vertx;
-    private String base64Auth;
 
     private VerticleMain() {
         this.vertx = Vertx.vertx();
@@ -38,33 +37,8 @@ public class VerticleMain {
         /*
          * Authorisation part. Read config.properties for user and password values
          * */
-        InputStream inputStream = null;
-        try {
-            Properties prop = new Properties();
-            String propFileName = "config.properties";
-            inputStream = getClass().getClassLoader().getResourceAsStream(propFileName);
-            if (inputStream != null) {
-                prop.load(inputStream);
-            } else {
-                throw new FileNotFoundException("property file '" + propFileName + "' not found in the classpath");
-            }
-            String user = prop.getProperty("auth.user");
-            String password = prop.getProperty("auth.password");
-            System.out.println("Auth: user "+user+", password "+password);
-            base64Auth = Base64.getEncoder().encodeToString(new StringBuilder(user).append(":").append(password).toString().getBytes());
-            System.out.println("Autehtication encoded: "+base64Auth);
-        } catch (Exception e) {
-            System.out.println("Exception: " + e);
-        } finally {
-            if (inputStream != null) {
-                try {
-                    inputStream.close();
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            }
-        }
-
+        //вынести в отдельный метод и записывать бейз64 в отдельную проперти+метод для получения проперти
+        encodeBase64access();
         Router router = Router.router(vertx);
         router.route("/").handler(routingContext -> {
             HttpServerResponse response = routingContext.response();
@@ -96,10 +70,8 @@ public class VerticleMain {
     }
 
     private void createURL(RoutingContext ctx) {
-        //сделать ручками декодирование
-        URLObject newUrl = Json.decodeValue(ctx.getBodyAsString(), URLObject.class);
+        URLObject newUrl = URLObject.parseJson(ctx.getBodyAsJson());
         UUID id;
-
         do {
             id = UUID.randomUUID();
         } while (urlMap.containsKey(id));
@@ -107,32 +79,92 @@ public class VerticleMain {
         urlMap.put(id.toString(), newUrl);
         System.out.println("updated urlMap ");
         urlMap.forEach((uuid, urlObject) -> System.out.println("UUID: " + uuid.toString() + " Object: " + urlObject.toString()));
-        //ручной енкод
         String urlObjectJSON = newUrl.createJSON().toString();
         ctx.response().setStatusCode(200).putHeader("content-type", "application/json; charset=utf-8")
                 .end(urlObjectJSON);
     }
 
     private void checkURL(RoutingContext ctx) {
-        //доделать
         String id = ctx.request().getParam("documentId");
         URLObject urlInMemory = urlMap.get(id);
         if (urlInMemory != null) {
             long time = new Date().getTime();
-            if (checkRequestsCount(urlInMemory) & urlInMemory.getCreatedTime() + urlInMemory.getLifeTime() <= time ) {
+            if (checkRequestsCount(urlInMemory) & urlInMemory.getCreatedTime() + urlInMemory.getLifeTime() >= time) {
                 ctx.next();
             } else {
-                ctx.response().putHeader("content-type", "text/html")
+                ctx.response().putHeader("content-type", "text/html").setStatusCode(404)
                         .end("<h1>Invalid URL. Required new URL.</h1>");
             }
-        }else{
-            ctx.response().putHeader("content-type", "text/html")
+        } else {
+            ctx.response().putHeader("content-type", "text/html").setStatusCode(404)
                     .end("<h1>Invalid URL. Required new URL.</h1>");
         }
     }
 
-    private Boolean checkRequestsCount(URLObject urlObj){
-        if (urlObj.getRequests()>0)
+    private String getProperty(String name) {
+        String result=null;
+        InputStream inputStream = null;
+        try {
+            Properties prop = new Properties();
+            String propFileName = "config.properties";
+            inputStream = getClass().getClassLoader().getResourceAsStream(propFileName);
+            if (inputStream != null) {
+                prop.load(inputStream);
+            } else {
+                throw new FileNotFoundException("property file '" + propFileName + "' not found in the classpath");
+            }
+            result = prop.getProperty(name);
+            System.out.println("get property from config: " + name + " " + result);
+        } catch (Exception e) {
+            System.out.println("Exception: " + e);
+        } finally {
+            if (inputStream != null && result != null) {
+                try {
+                    inputStream.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+        return result;
+    }
+
+    private void setProperty(String name, String value) {
+        InputStream inputStream = null;
+        try {
+            Properties prop = new Properties();
+            String propFileName = "config.properties";
+            inputStream = getClass().getClassLoader().getResourceAsStream(propFileName);
+            if (inputStream != null) {
+                prop.load(inputStream);
+            } else {
+                throw new FileNotFoundException("property file '" + propFileName + "' not found in the classpath");
+            }
+            prop.setProperty(name,value);
+            System.out.println("set property to config: " + name + " " + value);
+        } catch (Exception e) {
+            System.out.println("Exception: " + e);
+        } finally {
+            if (inputStream != null ) {
+                try {
+                    inputStream.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+
+    private void encodeBase64access() {
+        String user = getProperty("user");
+        String password = getProperty("password");
+        String base64Auth = Base64.getEncoder().encodeToString(new StringBuilder(user).append(":").append(password).toString().getBytes());
+        setProperty("base64access",base64Auth);
+        System.out.println("Autehtication encoded: " + base64Auth);
+    }
+
+    private Boolean checkRequestsCount(URLObject urlObj) {
+        if (urlObj.getRequests() > 0)
             return true;
         else
             return false;
@@ -150,7 +182,7 @@ public class VerticleMain {
          * */
         WebClient client = WebClient.create(vertx);
         client
-                // .getAbs("https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf")
+                //.getAbs("https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf")
                 .get(8001, "localhost", "/getDocument")
                 //auth header
                 //.putHeader(HttpHeaders.AUTHORIZATION.toString(),"Basic "+base64Auth)
@@ -163,11 +195,11 @@ public class VerticleMain {
                         //decrease requests by -1
                         urlInMemory.setRequests(urlInMemory.getRequests() - 1);
                         ctx.response().putHeader("Content-type", response.getHeader("Content-type")).end(Buffer.buffer(body.getBytes()));
-                        ctx.put("success",true);
+                        ctx.put("success", true);
                         ctx.next();
                     } else {
                         ctx.response().setStatusCode(400).putHeader("content-type", "application/json; charset=utf-8")
-                                .end(Json.encodePrettily("Bad request"));
+                                .end(Json.encode("Bad request"));
                     }
                 });
     }
@@ -176,7 +208,7 @@ public class VerticleMain {
         URLObject urlInMemory = ctx.get("object");
         Boolean success = ctx.get("success");
 
-        if (!checkRequestsCount(urlInMemory)&& success) {
+        if (!checkRequestsCount(urlInMemory) && success) {
             urlMap.remove(urlInMemory.getExternalUUID().toString());
         }
     }
