@@ -62,7 +62,9 @@ public class VerticleMain {
     * Check life time of each object in map. If !checkUrlTime -> remove object from map.
     * */
     private void setTimerCleaner(){
-        Integer days = Integer.getInteger(getProperty("timerDelay"));
+        String s= getProperty("timerDelay");
+
+            Integer days = Integer.valueOf(s);
         long delay = days*24*3600*1000;
        // String timerUnit = getProperty("timerUnit");
         timerId = vertx.setPeriodic(delay, new Handler<Long>() {
