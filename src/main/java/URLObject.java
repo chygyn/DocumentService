@@ -1,5 +1,7 @@
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.vertx.core.json.Json;
+import io.vertx.core.json.JsonObject;
 
 import java.util.Date;
 import java.util.UUID;
@@ -69,15 +71,22 @@ public class URLObject {
         return "urlObj: internalUrl "+internalUrl+", UUID "+externalUUID+", requests "+requests+", lifeTime "+lifeTime+", createdTime "+createdTime;
     }
 
-    public ObjectNode createJSON (){
-        ObjectMapper mapper = new ObjectMapper();
-        ObjectNode node =  mapper.createObjectNode();
-        node.put("internalURL",this.internalUrl)
+    public JsonObject createJSON (){
+        JsonObject result = new JsonObject();
+        result.put("internalURL",this.internalUrl)
                 .put("externalUUID",this.externalUUID.toString())
                 .put("createdTime",this.createdTime)
                 .put("lifeTime",this.lifeTime)
                 .put("requests",this.requests);
-        System.out.println("URLObject JSON: "+node.toString());
-        return node;
+        return result;
+    }
+
+    public static URLObject parseJson (JsonObject json){
+        URLObject result = new URLObject();
+        result.setInternalUrl(json.getString("internalURL"));
+        result.setCreatedTime(json.getLong("createdTime"));
+        result.setLifeTime(json.getInteger("lifeTime"));
+        result.setRequests(json.getInteger("requests"));
+        return result;
     }
 }
